@@ -1,0 +1,77 @@
+"""Tests for CI stage deployment script."""
+
+import json
+import tempfile
+from pathlib import Path
+
+from ci.deploy_stages import filter_stages_by_env, load_stage_configs
+
+
+def test_load_stage_configs():
+    """Test loading stage configurations from JSON."""
+    test_config = [
+        {
+            "stage_name": "FrdevStage",
+            "stacks": ["FrdevStage/NetworkStack"],
+            "stack_count": 1,
+            "env_type": "dev",
+            "deploy_pattern": "FrdevStage/*",
+        }
+    ]
+
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as f:
+        json.dump(test_config, f)
+        temp_file = f.name
+
+    try:
+        configs = load_stage_configs(temp_file)
+        assert len(configs) == 1
+        assert configs[0]["stage_name"] == "FrdevStage"
+        assert configs[0]["env_type"] == "dev"
+    finally:
+        Path(temp_file).unlink()
+
+
+def test_filter_stages_by_env():
+    """Test filtering stages by environment type."""
+    configs = [
+        {
+            "stage_name": "FrdevStage",
+            "env_type": "dev",
+            "stack_count": 2,
+        },
+        {
+            "stage_name": "FrstgStage",
+            "env_type": "stg",
+            "stack_count": 2,
+        },
+        {
+            "stage_name": "FrprdStage",
+            "env_type": "prd",
+            "stack_count": 2,
+        },
+        {
+            "stage_name": "TenantbprdStage",
+            "env_type": "prd",
+            "stack_count": 1,
+        },
+    ]
+
+    # Test dev filter
+    dev_stages = filter_stages_by_env(configs, "dev")
+    assert len(dev_stages) == 1
+    assert dev_stages[0]["stage_name"] == "FrdevStage"
+
+    # Test stg filter
+    stg_stages = filter_stages_by_env(configs, "stg")
+    assert len(stg_stages) == 1
+    assert stg_stages[0]["stage_name"] == "FrstgStage"
+
+    # Test prd filter
+    prd_stages = filter_stages_by_env(configs, "prd")
+    assert len(prd_stages) == 2
+    assert all(s["env_type"] == "prd" for s in prd_stages)
+
+    # Test other filter
+    other_stages = filter_stages_by_env(configs, "other")
+    assert len(other_stages) == 0

@@ -1,0 +1,53 @@
+# =======================================
+# STAGE: DISCOVER
+# Discover CDK stacks and generate dynamic jobs
+# =======================================
+
+discover-stages:
+  stage: discover
+  script:
+    - echo "🔍 Discovering CDK stages dynamically..."
+    - echo "🔐 Principal AWS Account - $AWS_PRINCIPAL_ACCOUNT_ID"
+    - echo "🌍 Region - $AWS_DEFAULT_REGION"
+    - echo " "
+    - echo "🔍 Extracting AWS account information..."
+    - cdk list --long | grep -v '^`' | grep -v '^current credentials' | grep -v '^$' > cdk_stacks_long.yml
+    - echo "Detailed stack information saved to cdk_stacks_long.yml"
+    - echo " "
+    - python3 ci/scripts/discover_stages.py
+    - echo " "
+    - echo "Generated dynamic jobs files:"
+    - ls -la gitlab-ci-dynamic-jobs-*.yml 2>/dev/null || echo "No files generated"
+    - |
+      for file in gitlab-ci-dynamic-jobs-*.yml; do
+        if [ -f "$file" ]; then
+          echo "=== Content of $file ==="
+          cat "$file"
+          echo " "
+        fi
+      done
+    - |
+      if [ -f "bootstrap_config.json" ]; then
+        echo " "
+        echo "📋 Bootstrap configuration:"
+        cat bootstrap_config.json
+      else
+        echo " "
+        echo "⚠️  WARNING: bootstrap_config.json was NOT generated!"
+        echo "Check logs above for YAML parsing issues."
+      fi
+  artifacts:
+    paths:
+      - stages_config.json
+      - cdk_stacks_long.yml
+      - bootstrap_config.json
+      - gitlab-ci-dynamic-jobs-dev.yml
+      - gitlab-ci-dynamic-jobs-stg.yml
+      - gitlab-ci-dynamic-jobs-prd.yml
+    exclude:
+      - "**/*.pyc"
+    when: always
+    expire_in: 1 hour
+  only:
+    - main
+    - develop

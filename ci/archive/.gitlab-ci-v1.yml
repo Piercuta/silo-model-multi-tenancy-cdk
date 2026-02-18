@@ -1,0 +1,141 @@
+# .gitlab-ci.yml
+# GitLab CI/CD pipeline for AWS CDK deployment with dynamic stage discovery
+default:
+  image: 320292863862.dkr.ecr.eu-west-1.amazonaws.com/infra/osd-cdk-ci-runner:latest
+
+stages:
+  - validate
+  - discover
+  - deploy
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  AWS_DEFAULT_REGION: "eu-west-1"
+  CDK_DISABLE_TYPEGUARD: "1"
+
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - .cache/pip
+    - .venv/
+
+# =======================================
+# STAGE: VALIDATE
+# =======================================
+
+lint:
+  stage: validate
+  script:
+    - echo "Running linters..."
+    - flake8 .
+  only:
+    - merge_requests
+    - main
+    - develop
+
+format-check:
+  stage: validate
+  script:
+    - echo "Checking code formatting..."
+    - black --check --diff .
+    - isort --check-only .
+  only:
+    - merge_requests
+    - main
+    - develop
+
+test:
+  stage: validate
+  script:
+    - echo "Running tests..."
+    - pytest tests/ -v
+    # - pytest tests/ -v --cov=. --cov-report=term
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# =======================================
+# STAGE: DISCOVER - Dynamic stage discovery
+# =======================================
+
+discover-stages:
+  stage: discover
+  script:
+    - echo "🔍 Discovering CDK stages dynamically..."
+    - cdk list > cdk_stacks.txt
+    - echo "Stack list:"
+    - cat cdk_stacks.txt
+    - echo ""
+    - python3 ci/discover_stages.py
+    - echo ""
+    - echo "Generated configuration:"
+    - cat stages_config.json
+  artifacts:
+    paths:
+      - stages_config.json
+      - cdk_stacks.txt
+    expire_in: 1 day
+  only:
+    - main
+    - develop
+
+# =======================================
+# STAGE: DEPLOY
+# =======================================
+
+# Deploy DEV environments (automatic on develop branch)
+deploy:dev:
+  stage: deploy
+  dependencies:
+    - discover-stages
+  environment:
+    name: development
+  script:
+    - echo "🚀 Deploying DEV stages..."
+    - python3 ci/deploy_stages.py dev
+  only:
+    - develop
+  when: on_success
+
+# Deploy STAGING environments (manual approval required)
+deploy:stg:
+  stage: deploy
+  dependencies:
+    - discover-stages
+  environment:
+    name: staging
+  script:
+    - echo "🚀 Deploying STAGING stages..."
+    - python3 ci/deploy_stages.py stg
+  only:
+    - main
+  when: manual
+
+# Deploy PRODUCTION environments (manual approval required)
+deploy:prd:
+  stage: deploy
+  dependencies:
+    - discover-stages
+  environment:
+    name: production
+  script:
+    - echo "🚀 Deploying PRODUCTION stages..."
+    - python3 ci/deploy_stages.py prd
+  only:
+    - main
+  when: manual
+
+# Show diff for all stages (manual, doesn't deploy)
+diff:all:
+  stage: deploy
+  dependencies:
+    - discover-stages
+  script:
+    - echo "📊 Showing CDK diff for all stages..."
+    - python3 ci/deploy_stages.py all --dry-run
+  only:
+    - merge_requests
+    - main
+    - develop
+  when: manual

@@ -1,0 +1,35 @@
+# =======================================
+# STAGE: VALIDATE
+# Code quality checks (linting, formatting, tests)
+# =======================================
+
+lint:
+  stage: validate
+  script:
+    - echo "Running linters..."
+    - flake8 .
+  only:
+    - merge_requests
+    - main
+    - develop
+
+format-check:
+  stage: validate
+  script:
+    - echo "Checking code formatting..."
+    - black --check --diff .
+    - isort --check-only .
+  only:
+    - merge_requests
+    - main
+    - develop
+
+test:
+  stage: validate
+  script:
+    - echo "Running tests..."
+    - pytest tests/
+  only:
+    - merge_requests
+    - main
+    - develop

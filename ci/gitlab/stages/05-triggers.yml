@@ -1,0 +1,53 @@
+# =======================================
+# STAGE: TRIGGER
+# Launch dynamic child pipelines per environment
+# =======================================
+
+1-dev-trigger-diff-deploy:
+  stage: trigger
+  needs:
+    - discover-stages
+  environment:
+    name: trigger-dev
+    action: prepare
+  trigger:
+    include:
+      - artifact: gitlab-ci-dynamic-jobs-dev.yml
+        job: discover-stages
+    strategy: depend
+  when: manual
+  only:
+    - main
+    - develop
+
+2-stg-trigger-diff-deploy:
+  stage: trigger
+  needs:
+    - discover-stages
+  environment:
+    name: trigger-stg
+    action: prepare
+  trigger:
+    include:
+      - artifact: gitlab-ci-dynamic-jobs-stg.yml
+        job: discover-stages
+    strategy: depend
+  when: manual
+  only:
+    - main
+
+3-prd-trigger-diff-deploy:
+  stage: trigger
+  needs:
+    - discover-stages
+  environment:
+    name: trigger-prd
+    action: prepare
+  trigger:
+    include:
+      - artifact: gitlab-ci-dynamic-jobs-prd.yml
+        job: discover-stages
+    strategy: depend
+  when: manual
+  only:
+    - main

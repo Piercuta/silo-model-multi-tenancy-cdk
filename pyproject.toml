@@ -1,0 +1,30 @@
+[tool.black]
+line-length = 100
+target-version = ['py312']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  # directories
+  \.eggs
+  | \.git
+  | \.venv
+  | \.tox
+  | \.pytest_cache
+  | build
+  | dist
+  | cdk.out
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip_gitignore = true
+
+[tool.bandit]
+exclude_dirs = ["tests", ".venv", "cdk.out"]
+skips = [
+    "B101",  # Skip assert_used (common in tests)
+    "B404",  # Skip subprocess import warning (needed for CI scripts)
+    "B602",  # Skip shell=True warning (controlled commands in CI)
+]

@@ -1,0 +1,37 @@
+# =======================================
+# STAGE: DEPLOY-SHARED
+# Deploy shared infrastructure (S3 buckets, ECR repositories) across regions
+# =======================================
+
+deploy-shared-stage:
+  stage: deploy-shared
+  needs:
+    - discover-stages
+  script:
+    - echo "🚀 Deploying Shared Stage (S3 buckets + ECR repositories)"
+    - echo "=========================================="
+    - echo "🔐 Checking current AWS identity..."
+    - aws sts get-caller-identity
+    - echo " "
+    - echo "📋 Listing shared stacks..."
+    - SHARED_STACKS=$(cdk list --long 2>/dev/null | grep -i "SharedOsd" || echo "")
+    - |
+      if [ -z "$SHARED_STACKS" ]; then
+        echo "⚠️  No shared stacks found. This is normal if running in focused mode (tenant/env context)."
+        echo "Skipping shared stage deployment."
+        exit 0
+      fi
+    - echo "$SHARED_STACKS"
+    - echo " "
+    - echo "🔍 Running diff for shared stage..."
+    - cdk diff SharedOsd/* || true
+    - echo " "
+    - echo "🚀 Deploying shared stage..."
+    - cdk deploy SharedOsd/* --require-approval never --concurrency 4 --progress events
+  when: manual
+  allow_failure: false
+  only:
+    - main
+  environment:
+    name: shared-infrastructure
+    action: start

@@ -1,0 +1,264 @@
+variables:
+  dns_zone_name: "app-tenant4.example.com"
+
+# domain stack and records in application stack and front end stack
+domain:
+  zone_name: "${dns_zone_name}"
+  hosted_zone_id: "Z1111111111111"
+  records:
+    front_domain_name: "${dns_zone_name}"
+    api_domain_name: "api.${dns_zone_name}"
+    sso_domain_name: "sso.${dns_zone_name}"
+
+aws:
+  account: "666666666666"
+  region: "eu-central-1"
+
+secrets:
+  secret_ecs_complete_arn: "arn:aws:secretsmanager:eu-central-1:666666666666:secret:nl/prd/secret-XXXXXX"
+
+# network stack
+vpc:
+  cidr: "10.18.0.0/16"
+  nat_gateways: 1
+
+# database stack
+redis:
+  cache_engine_version: "7.1"
+
+aurora_cluster:
+  engine: "mysql"
+
+docdb:
+  storage_encrypted: true
+
+# application stack
+alb:
+  internet_facing: true
+  # probably to be shifted into the ecs_services section
+  target_group_osd_api:
+    port: 8080
+    protocol: HTTP
+    health_check:
+      path: "/actuator/health"
+      port: "2112"
+      success_codes: "200"
+  target_group_keycloak:
+    port: 8080
+    protocol: HTTP
+    health_check:
+      protocol: HTTPS
+      path: "/health/ready"
+      port: "9000"
+      success_codes: "200"
+
+ecs_cluster:
+  container_insights: true
+
+ecs_services:
+  osd_api:
+    name: "osd-api"
+    cpu: 1024
+    memory: 2048
+    desired_count: 1
+    auto_scaling:
+      min_capacity: 1
+      max_capacity: 10
+      cpu_target: 60
+    containers:
+      - container_name: "osd-api"
+        image: "111111111111.dkr.ecr.eu-west-1.amazonaws.com/osd/osd-api:abc12345"
+        health_check:
+          command: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:2112/actuator/health || exit 1"]
+          interval: 30
+          timeout: 10
+          retries: 3
+          start_period: 5
+        port_mappings:
+          - name: "osd-api-public"
+            container_port: 8080
+          - name: "osd-api"
+            container_port: 8079
+          - name: osd-api-metrics
+            container_port: 2112
+        environment:
+          SERVER_PORT: "8080"
+          # SPRING_*
+          SPRING_PROFILES_ACTIVE: "osd-fr,with-redis,aws-tenant"
+          # for redis serverless
+          # SPRING_DATA_REDIS_SSL_ENABLED: "true"
+          # SPRING_DATA_REDIS_DATABASE: "0"
+          # SSO_*
+          # OSD_*
+          OSD_SPA_XSLT_SERVICE_URL: "http://xslt:8090"
+          OSD_SETTINGS_LOG_4xx_ERRORS: "true"
+          OSD_SETTINGS_SHOW_STACK_TRACE_IN_HTTP_RESPONSES: "true"
+          OSD_SETTINGS_FONTO_IMAGES_ACCESS_PORT: "8079"
+          # SPRING_SECURITY_OAUTH2_CLIENT_*
+          SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_CLIENT_ID: "osd"
+          SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_PROVIDER: "keycloak"
+          SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_AUTHORIZATION_GRANT_TYPE: "authorization_code"
+          SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_SCOPE: "openid,profile"
+          SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_KEYCLOAK_REDIRECT_URI: "{baseUrl}/login/oauth2/code/{registrationId}"
+          SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_KEYCLOAK_USER_NAME_ATTRIBUTE: "preferred_username"
+    service_connect_services:
+      - port_mapping_name: "osd-api"
+        dns_name: "osd-api"
+        port: 8079
+      - port_mapping_name: "osd-api-public"
+        dns_name: "osd-api-public"
+        port: 8080
+      - port_mapping_name: "osd-api-metrics"
+        dns_name: "osd-api-metrics"
+        port: 2112
+  xslt:
+    name: "xslt"
+    cpu: 512
+    memory: 1024
+    desired_count: 1
+    auto_scaling:
+      min_capacity: 1
+      max_capacity: 10
+      cpu_target: 60
+    containers:
+      - container_name: "xslt"
+        image: "111111111111.dkr.ecr.eu-west-1.amazonaws.com/osd/xslt-processor:1.0.0"
+        health_check:
+          command: ["CMD-SHELL", "echo 'OK' || exit 1"]
+          interval: 30
+          timeout: 10
+          retries: 3
+          start_period: 40
+        port_mappings:
+          - name: "xslt"
+            container_port: 8090
+        environment:
+          SPRING_PROFILES_ACTIVE: "aws-tenant"
+          SERVER_PORT: "8090"
+          XSLT_USE_CONVERT_API: "true"
+          XSLT_CONVERT_API_TOKEN: "REDACTED_API_TOKEN_PLACEHOLDER"
+    service_connect_services:
+      - port_mapping_name: "xslt"
+        dns_name: "xslt"
+        port: 8090
+  review:
+    name: "review"
+    cpu: 512
+    memory: 1024
+    desired_count: 1
+    auto_scaling:
+      min_capacity: 1
+      max_capacity: 10
+      cpu_target: 60
+    containers:
+      - container_name: "review"
+        image: "111111111111.dkr.ecr.eu-west-1.amazonaws.com/osd/fonto/review:8.14.14"
+        health_check:
+          command: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/api/health || exit 1"]
+          interval: 30
+          timeout: 10
+          retries: 3
+          start_period: 40
+        port_mappings:
+          - name: "review"
+            container_port: 80
+        environment:
+          Cms__ApiBaseUrl: "http://osd-api:8079/internal-apis/fonto/"
+          SchemaExperience__ObjectTest: "self::graphic or self::disp-formula"
+          SchemaExperience__BlockTest: "self::*[(local-name()='crossReference' or local-name()='definition' or local-name()='example' or local-name()='externalCrossReference' or local-name()='note' or local-name()='pronunciation' or local-name()='see' or local-name()='source' or local-name()='term' or local-name()='usageNote') and namespace-uri()='urn:iso:std:iso:30042:ed-1' or (local-name()='addr-line' or local-name()='aff' or local-name()='alt-title' or local-name()='article-title' or local-name()='attrib' or local-name()='award-id' or local-name()='chapter-title' or local-name()='code' or local-name()='collab' or local-name()='comment' or local-name()='compl' or local-name()='compound-kwd-part' or local-name()='compound-subject-part' or local-name()='conf-loc' or local-name()='conf-sponsor' or local-name()='conf-theme' or local-name()='copyright-holder' or local-name()='copyright-statement' or local-name()='corresp' or local-name()='data-title' or local-name()='date-in-citation' or local-name()='def-head' or local-name()='disp-formula' or local-name()='edition' or local-name()='full' or local-name()='funding-source' or local-name()='funding-statement' or local-name()='gov' or local-name()='institution' or local-name()='intro' or local-name()='kwd' or local-name()='label' or local-name()='license-p' or local-name()='main' or local-name()='meta-value' or local-name()='nav-pointer' or local-name()='nav-pointer-group' or local-name()='on-behalf-of' or local-name()='p' or local-name()='part-title' or local-name()='person-group' or local-name()='preformat' or local-name()='price' or local-name()='principal-award-recipient' or local-name()='principal-investigator' or local-name()='product' or local-name()='pronunciation' or local-name()='publisher-loc' or local-name()='publisher-name' or local-name()='rb' or local-name()='related-term' or local-name()='role' or local-name()='see' or local-name()='see-also' or local-name()='see-also-entry' or local-name()='see-entry' or local-name()='series' or local-name()='series-text' or local-name()='series-title' or local-name()='sig' or local-name()='sig-block' or local-name()='source' or local-name()='speaker' or local-name()='std-org-abbrev' or local-name()='std-org-loc' or local-name()='std-org-name' or local-name()='string-conf' or local-name()='string-name' or local-name()='subject' or local-name()='subtitle' or local-name()='supplement' or local-name()='td' or local-name()='term' or local-name()='term-head' or local-name()='term-source' or local-name()='textual-form' or local-name()='th' or local-name()='title' or local-name()='trans-source' or local-name()='trans-subtitle' or local-name()='trans-title' or local-name()='verse-line' or local-name()='version')]"
+    service_connect_services:
+      - port_mapping_name: "review"
+        dns_name: "review"
+        port: 80
+  content_quality:
+    name: "content-quality"
+    cpu: 512
+    memory: 2048
+    desired_count: 1
+    auto_scaling:
+      min_capacity: 1
+      max_capacity: 10
+      cpu_target: 60
+    containers:
+      - container_name: "content-quality"
+        image: "111111111111.dkr.ecr.eu-west-1.amazonaws.com/osd/fonto/content-quality:8.14.14"
+        health_check:
+          command: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/api/health || exit 1"]
+          interval: 30
+          timeout: 10
+          retries: 3
+          start_period: 40
+        port_mappings:
+          - name: "content-quality"
+            container_port: 80
+        environment:
+          DictionaryUrl: "http://osd-api:8079/internal-apis/fonto/custom/dictionaries"
+          IgnoreAllUrl: "http://osd-api:8079/internal-apis/fonto/custom/ignored-rules"
+          Cms__ApiBaseUrl: "http://osd-api:8079/internal-apis/fonto/"
+          AnnotateTermsUrl: "http://osd-api:8079/internal-apis/fonto/custom/terms"
+    service_connect_services:
+      - port_mapping_name: "content-quality"
+        dns_name: "content-quality"
+        port: 80
+  document_history:
+    name: "document-history"
+    cpu: 512
+    memory: 1024
+    desired_count: 1
+    auto_scaling:
+      min_capacity: 1
+      max_capacity: 10
+      cpu_target: 60
+    containers:
+      - container_name: "document-history"
+        image: "111111111111.dkr.ecr.eu-west-1.amazonaws.com/osd/fonto/document-history:8.14.14"
+        health_check:
+          command: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:80/api/health || exit 1"]
+          interval: 30
+          timeout: 10
+          retries: 3
+          start_period: 40
+        port_mappings:
+          - name: "document-history"
+            container_port: 80
+        environment:
+          Cms__ApiBaseUrl: "http://osd-api:8079/internal-apis/fonto/"
+    service_connect_services:
+      - port_mapping_name: "document-history"
+        dns_name: "document-history"
+        port: 80
+  keycloak:
+    name: "keycloak"
+    cpu: 1024
+    memory: 2048
+    desired_count: 1
+    auto_scaling:
+      min_capacity: 1
+      max_capacity: 10
+      cpu_target: 60
+    containers:
+      - container_name: "keycloak"
+        image: "111111111111.dkr.ecr.eu-west-1.amazonaws.com/osd/keycloak:1.0.0"
+        health_check:
+          command: ["CMD-SHELL", "java /tmp/healthcheck.java https://localhost:9000/health/ready"]
+          interval: 30
+          timeout: 10
+          retries: 3
+        port_mappings:
+          - name: "keycloak"
+            container_port: 8080
+          - name: "keycloak-management"
+            container_port: 9000
+          - name: "keycloak-infinispan"
+            container_port: 7800
+        environment:
+          KC_PROXY_HEADERS: "xforwarded"
+          KC_DB: "mysql"
+          KC_HTTP_ENABLED: "true"
+          KC_BOOTSTRAP_ADMIN_USERNAME: admin
+          KC_TRANSACTION_XA_ENABLED: "false"
+          OSD_REALM_SMTP_SERVER_FROM_DISPLAY_NAME: "OSD Nl"
+
+# frontend stack
+front_end:
+  comment: "osd nl"

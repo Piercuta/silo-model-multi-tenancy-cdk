@@ -1,0 +1,24 @@
+*.swp
+package-lock.json
+__pycache__
+.pytest_cache
+.venv
+*.egg-info
+
+# CDK asset staging directory
+.cdk.staging
+cdk.out
+OTELCollector-OTel-*.yaml
+/.idea/
+
+# CI/CD generated files
+cdk_stacks.txt
+stages_config.json
+gitlab-ci-dynamic-jobs.yml
+
+# Coverage reports
+htmlcov/
+.coverage
+coverage.xml
+
+sensitive_data.yaml

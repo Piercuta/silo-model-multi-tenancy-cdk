@@ -1,0 +1,8 @@
+include:
+  - local: .gitlab-ci-default.yml
+    rules:
+      - if: '$PIPELINE_TYPE == null'
+
+  - local: .gitlab-ci-deploy-single-tenant.yml
+    rules:
+      - if: '$PIPELINE_TYPE == "single-tenant"'

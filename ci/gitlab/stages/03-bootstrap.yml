@@ -1,0 +1,25 @@
+# =======================================
+# STAGE: BOOTSTRAP
+# One-time AWS account setup with cross-account AssumeRole
+# =======================================
+
+bootstrap-discovered-accounts:
+  stage: bootstrap
+  needs:
+    - discover-stages
+  script:
+    - echo "🔧 CDK Bootstrap - One-time account setup"
+    - echo "=========================================="
+    - echo "Using principal account from variable AWS_PRINCIPAL_ACCOUNT_ID=$AWS_PRINCIPAL_ACCOUNT_ID"
+    - echo " "
+    - echo "🔐 Checking current AWS identity..."
+    - aws sts get-caller-identity
+    - echo " "
+    - echo "📋 Bootstrap configuration (generated from discovered stacks):"
+    - cat bootstrap_config.json || echo "⚠️  bootstrap_config.json not found"
+    - echo " "
+    - python3 ci/scripts/bootstrap_accounts.py
+  when: manual
+  allow_failure: true
+  only:
+    - main

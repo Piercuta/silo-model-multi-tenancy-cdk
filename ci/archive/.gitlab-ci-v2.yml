@@ -1,0 +1,97 @@
+# .gitlab-ci-dynamic.yml
+# GitLab CI/CD with DYNAMIC deployment jobs per CDK stage
+# Alternative version that generates one job per discovered stage
+
+default:
+  image: 320292863862.dkr.ecr.eu-west-1.amazonaws.com/infra/osd-cdk-ci-runner:latest
+
+stages:
+  - validate
+  - discover
+  - trigger
+  - deploy   # Child pipeline jobs will be here
+
+variables:
+  CDK_DISABLE_TYPEGUARD: "1"
+  AWS_DEFAULT_REGION: "eu-west-1"
+  ECR_IMAGE: "320292863862.dkr.ecr.eu-west-1.amazonaws.com/infra/osd-cdk-ci-runner:latest"
+
+
+# =======================================
+# STAGE: VALIDATE
+# =======================================
+
+lint:
+  stage: validate
+  script:
+    - echo "Running linters..."
+    - flake8 .
+  only:
+    - merge_requests
+    - main
+    - develop
+
+format-check:
+  stage: validate
+  script:
+    - echo "Checking code formatting..."
+    - black --check --diff .
+    - isort --check-only .
+  only:
+    - merge_requests
+    - main
+    - develop
+
+test:
+  stage: validate
+  script:
+    - echo "Running tests..."
+    # - pytest tests/ -v --cov=. --cov-report=term
+    - pytest tests/
+  only:
+    - merge_requests
+    - main
+    - develop
+
+# =======================================
+# STAGE: DISCOVER
+# =======================================
+
+discover-stages:
+  stage: discover
+  script:
+    - echo "🔍 Discovering CDK stages dynamically..."
+    - cdk list > cdk_stacks.txt
+    - echo "Stack list:"
+    - cat cdk_stacks.txt
+    - echo ""
+    - python3 ci/discover_stages.py
+    - echo ""
+    - echo "Generated dynamic jobs:"
+    - cat gitlab-ci-dynamic-jobs.yml
+  artifacts:
+    paths:
+      - stages_config.json
+      - cdk_stacks.txt
+      - gitlab-ci-dynamic-jobs.yml
+    expire_in: 1 day
+  only:
+    - main
+    - develop
+
+# =======================================
+# STAGE: TRIGGER - Launch dynamic jobs
+# =======================================
+
+trigger-deploy-jobs:
+  stage: trigger
+  needs:
+    - discover-stages
+  trigger:
+    include:
+      - artifact: gitlab-ci-dynamic-jobs.yml
+        job: discover-stages
+    strategy: depend
+  only:
+    - main
+    - develop

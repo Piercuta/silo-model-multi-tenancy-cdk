@@ -1,0 +1,44 @@
+{
+  "TrustPolicy": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": [
+            "arn:aws:iam::888888888888:root",
+            "arn:aws:iam::999999999999:root"
+          ]
+        },
+        "Action": "sts:AssumeRole"
+      }
+    ]
+  },
+  "PermissionsPolicy": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Sid": "AllowRoute53ModificationsForSubdomains",
+        "Effect": "Allow",
+        "Action": [
+          "route53:ChangeResourceRecordSets",
+          "route53:GetChange",
+          "route53:ListResourceRecordSets"
+        ],
+        "Resource": [
+          "arn:aws:route53:::hostedzone/Z2222222222222"
+        ]
+      },
+      {
+        "Sid": "AllowGetChangeForAllChanges",
+        "Effect": "Allow",
+        "Action": [
+          "route53:GetChange"
+        ],
+        "Resource": [
+          "arn:aws:route53:::change/*"
+        ]
+      }
+    ]
+  }
+}
